@@ -1,0 +1,9 @@
+flask
+flask-sqlalchemy
+flask-migrate
+flask-login
+flask-wtf
+python-dotenv
+passlib
+PyMySQL==1.0.2
+cryptography==3.3.2  # PyMySQL的依赖
