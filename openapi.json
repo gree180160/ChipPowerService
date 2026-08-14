@@ -1,0 +1,477 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ChipPower 数据服务 API",
+    "version": "1.0.0",
+    "description": "ChipPower 爬虫数据存储服务，支持所有 IC 相关数据表的读写操作"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5001/api/data",
+      "description": "本地开发服务器"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["系统"],
+        "summary": "健康检查",
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": {
+              "application/json": {
+                "example": {"code": 200, "message": "Success", "data": {"status": "ok", "message": "Data service is running"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/task/write": {
+      "post": {
+        "tags": ["Task 任务管理"],
+        "summary": "写入/更新任务数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}},
+              "example": [{"Tname": "crawler_task_001", "Tdes": "IC数据采集任务", "Tstate": "running", "Tlevel": 1}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/task/read": {
+      "get": {
+        "tags": ["Task 任务管理"],
+        "summary": "查询任务数据",
+        "parameters": [
+          {"name": "Tname", "in": "query", "schema": {"type": "string"}},
+          {"name": "Tstate", "in": "query", "schema": {"type": "string"}}
+        ],
+        "responses": {"200": {"description": "查询成功"}}
+      }
+    },
+    "/ic_hot_m/write": {
+      "post": {
+        "tags": ["IC Hot Monthly 月度热度"],
+        "summary": "写入/更新IC月度热度数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "TEST-IC-001", "manu": "TestManufacturer", "m1": 100.5, "m2": 200.3, "m3": 150.0, "m4": 180.0, "m5": 190.0, "m6": 170.0, "m7": 160.0, "m8": 155.0, "m9": 140.0, "m10": 130.0, "m11": 120.0, "m12": 110.0, "task_name": "test_task"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ic_hot_m/read": {
+      "get": {"tags": ["IC Hot Monthly 月度热度"], "summary": "查询IC月度热度数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/ic_hot_w/write": {
+      "post": {
+        "tags": ["IC Hot Weekly 周度热度"],
+        "summary": "写入/更新IC周度热度数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "TEST-IC-W-001", "manu": "TestManufacturer", "w1": 10.0, "w2": 20.0, "w3": 30.0, "task_name": "test_task"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ic_hot_w/read": {
+      "get": {"tags": ["IC Hot Weekly 周度热度"], "summary": "查询IC周度热度数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/ic_price_demand/write": {
+      "post": {
+        "tags": ["IC Price Demand 价格需求"],
+        "summary": "写入/更新IC价格需求数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "DEMAND-001", "manu": "TestManu", "price": "¥6.836", "month_search_count": 175, "supplierCount": 443, "cp_count": 10, "rank_count": 5, "task_name": "test_demand"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ic_price_demand/read": {
+      "get": {"tags": ["IC Price Demand 价格需求"], "summary": "查询IC价格需求数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/cxyx_stock/write": {
+      "post": {
+        "tags": ["CXYX Stock 创芯易询库存"],
+        "summary": "写入/更新创芯易询库存数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"supplier_name": "TestSupplier", "model": "MODEL-001", "brand": "TestBrand", "category": "IC", "price_step": "1-10:¥5.00", "stock_num": "1000", "batch_info": "2024+", "task_name": "test_cxyx"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/cxyx_stock/read": {
+      "get": {"tags": ["CXYX Stock 创芯易询库存"], "summary": "查询创芯易询库存数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/ic_stock/write": {
+      "post": {
+        "tags": ["IC Stock IC库存"],
+        "summary": "写入/更新IC库存数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "STOCK-001", "st_manu": "STManu", "supplier_ppn": "SUP-PPN-001", "supplier_manu": "SupManu", "supplier": "TestSupplier", "isICCP": true, "isSSCP": false, "iSRanking": 1, "isHotSell": true, "isYouXian": false, "batch": "2024+", "pakaging": "QFN", "stock_num": "5000", "task_name": "test_ic_stock"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ic_stock/read": {
+      "get": {"tags": ["IC Stock IC库存"], "summary": "查询IC库存数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/ic_des/write": {
+      "post": {
+        "tags": ["IC Des IC描述信息"],
+        "summary": "写入/更新IC描述数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "DES-001", "manu": "DesManu", "todaySearch": 100, "todaySearch_person": 50, "yesterdaySearch": 90, "yesterdaySearch_person": 45, "reference_price": "¥10.00", "week_search": 500, "market_hot": "high", "risk": "low", "mainLand_stock": "10000", "international_stock": "50000", "task_name": "test_des"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ic_des/read": {
+      "get": {"tags": ["IC Des IC描述信息"], "summary": "查询IC描述数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/hq_stock/write": {
+      "post": {
+        "tags": ["HQ Stock 华强库存"],
+        "summary": "写入/更新华强库存数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "HQ-001", "std_manu": "HQManu", "supplier": "HQSupplier", "sup_ppn": "SUP-HQ-001", "sup_manu": "SupHQManu", "batch": "2024+", "stock": "1000", "packing": "SOP", "param": "参数说明", "place": "深圳", "instruction": "使用说明", "publish_date": "2024-01-01", "task_name": "test_hq"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/hq_stock/read": {
+      "get": {"tags": ["HQ Stock 华强库存"], "summary": "查询华强库存数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/hq_hot/write": {
+      "post": {
+        "tags": ["HQ Hot 华强热度"],
+        "summary": "写入/更新华强热度数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "HQHOT-001", "manu": "HotManu", "weak_hot": 85.5, "month_hot": 92.3, "task_name": "test_hq_hot"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/hq_hot/read": {
+      "get": {"tags": ["HQ Hot 华强热度"], "summary": "查询华强热度数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/hq_hot/query_by_models": {
+      "post": {
+        "tags": ["HQ Hot 华强热度"],
+        "summary": "根据型号列表批量查询华强热度",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {"models": ["MODEL-A", "MODEL-B", "MODEL-C"]}
+            }
+          }
+        },
+        "responses": {"200": {"description": "查询成功"}}
+      }
+    },
+    "/efind_stock/write": {
+      "post": {
+        "tags": ["EFind Stock EFind库存"],
+        "summary": "写入/更新EFind库存数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "EFIND-001", "manu": "EFindManu", "sup_manu": "SupManu", "supplier": "EFindSupplier", "publish_date": "2024-01-15", "info": "库存信息", "price": "¥5.00", "stock": "500", "task_name": "test_efind"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/efind_stock/read": {
+      "get": {"tags": ["EFind Stock EFind库存"], "summary": "查询EFind库存数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/efind_supplier/write": {
+      "post": {
+        "tags": ["EFind Supplier EFind供应商"],
+        "summary": "写入/更新EFind供应商数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "ESUPP-001", "manu": "ESuppManu", "all_supplier": 100, "price_supplier": 80, "stock_supplier": 50, "stock": "10000", "middle_price": "¥8.00", "min_price": "¥5.00", "max_price": "¥12.00", "task_name": "test_esupp"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/efind_supplier/read": {
+      "get": {"tags": ["EFind Supplier EFind供应商"], "summary": "查询EFind供应商数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/bom_price/write": {
+      "post": {
+        "tags": ["BOM Price BOM价格"],
+        "summary": "写入/更新BOM价格数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "BOM-001", "manu": "BOMManu", "supplier": "BOMSupplier", "package": "QFN-32", "lot": "2024+", "quoted_price": "¥3.50", "release_time": "2024-01-20", "stock_num": "2000", "valid_supplier": 5, "task_name": "test_bom"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/bom_price/read": {
+      "get": {"tags": ["BOM Price BOM价格"], "summary": "查询BOM价格数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/octopart_price/write": {
+      "post": {
+        "tags": ["Octopart Price 价格"],
+        "summary": "写入/更新Octopart价格数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "OCTO-P-001", "manu": "OctoManu", "is_star": true, "distribute": "DigiKey", "sku": "SKU-12345", "stock": "5000", "moq": "1", "currency_type": "CNY", "k_price": "¥15.00", "updated": "2024-01-25", "opn": "OPN-001", "task_name": "test_octo_p"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/octopart_price/read": {
+      "get": {"tags": ["Octopart Price 价格"], "summary": "查询Octopart价格数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/octopart_market/write": {
+      "post": {
+        "tags": ["Octopart Market 市场"],
+        "summary": "写入/更新Octopart市场数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "OCTO-M-001", "manu": "OctoManu", "des": "产品描述", "distribute": "Mouser", "stock": "3000", "currency_type": "USD", "k_price": "$2.00", "stock_pic": "pic_url", "opn": "OPN-M-001", "task_name": "test_octo_m"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/octopart_market/read": {
+      "get": {"tags": ["Octopart Market 市场"], "summary": "查询Octopart市场数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/octopart_info/write": {
+      "post": {
+        "tags": ["Octopart Info 信息"],
+        "summary": "写入/更新Octopart信息数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "OCTO-I-001", "manu": "OctoManu", "des": "详细描述", "distribute": "Newark", "stock": "1000", "currency_type": "EUR", "k_price": "€1.80", "opn": "OPN-I-001", "stock_data": "{}", "tech_data": "{}", "supplier_data": "{}", "task_name": "test_octo_i"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/octopart_info/read": {
+      "get": {"tags": ["Octopart Info 信息"], "summary": "查询Octopart信息数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/findchip_stock/write": {
+      "post": {
+        "tags": ["FindChip Stock 库存"],
+        "summary": "写入/更新FindChips库存数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "FIND-001", "manu": "FindManu", "supplier": "FindSupplier", "authorized": true, "part_url": "https://example.com/part", "stock_str": "10000 in stock", "task_name": "test_find"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/findchip_stock/read": {
+      "get": {"tags": ["FindChip Stock 库存"], "summary": "查询FindChips库存数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/digikey_attr/write": {
+      "post": {
+        "tags": ["Digikey Attr 属性"],
+        "summary": "写入/更新Digikey属性数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "DIGI-001", "manu": "DigiManu", "digi_key_code": "DK-123", "manu_code": "MANU-456", "des": "TVS二极管", "delivery_time": "5-7天", "detail_des": "详细描述", "category": "二极管", "serial": "SMAJ系列", "package": "SMA", "status": "在售", "kind": "TVS", "task_name": "test_digi"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/digikey_attr/read": {
+      "get": {"tags": ["Digikey Attr 属性"], "summary": "查询Digikey属性数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/wheat_record/write": {
+      "post": {
+        "tags": ["Wheat Record 记录"],
+        "summary": "写入/更新Wheat记录数据",
+        "parameters": [{"name": "is_ru", "in": "query", "schema": {"type": "boolean", "default": false}, "description": "是否写入俄罗斯记录"}],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"keyword": "TEST-CHIP", "all_records": 1000, "task_name": "test_wheat"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/wheat_record/read": {
+      "get": {"tags": ["Wheat Record 记录"], "summary": "查询Wheat记录数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/wheat_buyer/write": {
+      "post": {
+        "tags": ["Wheat Buyer 买家"],
+        "summary": "写入/更新Wheat买家数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"keyword": "IMPORT-001", "wheat_date": "2024-01", "buyer": "俄罗斯买家", "supplier": "中国供应商", "HSCode": "8542390000", "description": "集成电路", "buy_country": "俄罗斯", "supplier_country": "中国", "productContry": "中国", "weight": "100kg", "number": "10000", "totalValue": "$50000", "current_page": 1, "task_name": "test_wheat_buyer"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/wheat_buyer/read": {
+      "get": {"tags": ["Wheat Buyer 买家"], "summary": "查询Wheat买家数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/rusprofile/write": {
+      "post": {
+        "tags": ["Rusprofile 公司信息"],
+        "summary": "写入/更新Rusprofile数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"company_name": "Test Company LLC", "profile_id": "123456", "full_name": "Test Company LLC", "inn": "1234567890", "activity": "电子元器件贸易", "register_date": "2020-01-01", "company_address": "莫斯科", "phone": "+7-495-123-45-67", "email": "test@example.com", "website": "https://example.com", "revenue": "100000000", "profit": "10000000", "cost": "90000000", "task_name": "test_rus"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/rusprofile/read": {
+      "get": {"tags": ["Rusprofile 公司信息"], "summary": "查询Rusprofile数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/future_info/write": {
+      "post": {
+        "tags": ["Future Info 现货信息"],
+        "summary": "写入/更新Future信息数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"st_part": "ST-001", "st_manu": "STManu", "f_ppn": "FUTURE-001", "f_manu": "FutureManu", "OnOrder": "1000", "stock": "500", "leadTime": "4-6周", "unitPrice": "¥20.00", "task_name": "test_future"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/future_info/read": {
+      "get": {"tags": ["Future Info 现货信息"], "summary": "查询Future信息数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/arrow_info/write": {
+      "post": {
+        "tags": ["Arrow Info 信息"],
+        "summary": "写入/更新Arrow信息数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"st_part": "ST-ARROW-001", "st_manu": "STManu", "a_ppn": "ARROW-001", "a_manu": "ArrowManu", "stock": "2000", "leadTime": "2-4周", "price": "¥18.00", "batch": "2024+", "task_name": "test_arrow"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/arrow_info/read": {
+      "get": {"tags": ["Arrow Info 信息"], "summary": "查询Arrow信息数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/ppn/write": {
+      "post": {
+        "tags": ["PPN 型号"],
+        "summary": "写入/更新PPN数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"ppn": "PPN-TEST-001", "manu_id": "M001", "manu_name": "TestManufacturer", "source": "HQ"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/ppn/read": {
+      "get": {"tags": ["PPN 型号"], "summary": "查询PPN数据", "responses": {"200": {"description": "查询成功"}}}
+    },
+    "/opn/write": {
+      "post": {
+        "tags": ["OPN 型号"],
+        "summary": "写入/更新OPN数据",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": [{"opn": "OPN-TEST-001", "manu_id": "M001", "manu_name": "TestManufacturer"}]
+            }
+          }
+        },
+        "responses": {"200": {"description": "写入成功"}}
+      }
+    },
+    "/opn/read": {
+      "get": {"tags": ["OPN 型号"], "summary": "查询OPN数据", "responses": {"200": {"description": "查询成功"}}}
+    }
+  },
+  "components": {
+    "schemas": {
+      "Task": {
+        "type": "object",
+        "properties": {
+          "Tname": {"type": "string", "description": "任务名称"},
+          "Tdes": {"type": "string", "description": "任务描述"},
+          "Tstate": {"type": "string", "description": "任务状态"},
+          "Tlevel": {"type": "integer", "description": "任务优先级"}
+        }
+      }
+    }
+  }
+}
