@@ -5,15 +5,16 @@ from datetime import datetime
 class Task(db.Model):
     __tablename__ = 't_task'
     __table_args__ = {'extend_existing': True}
-    
+
     TID = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
     Tname = db.Column(db.String(200))
     Tdes = db.Column(db.String(256))
     Tstate = db.Column(db.SmallInteger)
     Tlevel = db.Column(db.SmallInteger)
+    tkind = db.Column(db.SmallInteger, default=0)
     TstartDate = db.Column(db.DateTime)
     TendDate = db.Column(db.DateTime)
-    
+
     def to_dict(self):
         return {
             'TID': self.TID,
@@ -21,6 +22,7 @@ class Task(db.Model):
             'Tdes': self.Tdes,
             'Tstate': self.Tstate,
             'Tlevel': self.Tlevel,
+            'tkind': self.tkind,
             'TstartDate': self.TstartDate.strftime('%Y-%m-%d %H:%M:%S') if self.TstartDate else None,
             'TendDate': self.TendDate.strftime('%Y-%m-%d %H:%M:%S') if self.TendDate else None
         }
@@ -145,14 +147,14 @@ class ICPriceDemand(db.Model):
     cp_count = db.Column(db.String(4))
     rank_count = db.Column(db.String(4))
     task_name = db.Column(db.String(100))
-    updata_time = db.Column(db.DateTime)
+    update_time = db.Column(db.DateTime)
     
     def to_dict(self):
         return {
             'ppn': self.ppn, 'manu': self.manu, 'price': self.price,
             'month_search_count': self.month_search_count, 'supplierCount': self.supplierCount,
             'cp_count': self.cp_count, 'rank_count': self.rank_count, 'task_name': self.task_name,
-            'updata_time': self.updata_time.strftime('%Y-%m-%d %H:%M:%S') if self.updata_time else None
+            'update_time': self.update_time.strftime('%Y-%m-%d %H:%M:%S') if self.update_time else None
         }
 
 
@@ -747,4 +749,161 @@ class User(db.Model):
             'password': self.password,
             'role': self.role,
             'create_time': self.create_time.strftime('%Y-%m-%d %H:%M:%S') if self.create_time else None
+        }
+
+
+# ============ monitor_market 数据库的表 (bind='monitor') ============
+
+class MonitorIC(db.Model):
+    __bind_key__ = 'monitor'
+    __tablename__ = 'monitor_ic'
+    __table_args__ = (
+        db.PrimaryKeyConstraint('st_ppn', 'st_manu', 'supplier', 'm_date'),
+        {'extend_existing': True}
+    )
+
+    st_ppn = db.Column(db.String(100), nullable=False)
+    st_manu = db.Column(db.String(100), nullable=False)
+    supplier = db.Column(db.String(255), nullable=False)
+    sup_ppn = db.Column(db.String(100), nullable=False)
+    sup_manu = db.Column(db.String(100), nullable=False)
+    sup_stock = db.Column(db.String(20), nullable=False)
+    m_date = db.Column(db.Date, nullable=False)
+
+    def to_dict(self):
+        return {
+            'st_ppn': self.st_ppn,
+            'st_manu': self.st_manu,
+            'supplier': self.supplier,
+            'sup_ppn': self.sup_ppn,
+            'sup_manu': self.sup_manu,
+            'sup_stock': self.sup_stock,
+            'm_date': self.m_date.strftime('%Y-%m-%d') if self.m_date else None
+        }
+
+
+class ICSupplierInfo(db.Model):
+    __bind_key__ = 'monitor'
+    __tablename__ = 'IC_supplier_info'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    age = db.Column(db.String(50))
+    address = db.Column(db.String(500))
+    hot = db.Column(db.String(50))
+    qq = db.Column(db.String(50))
+    tel = db.Column(db.String(500))
+    phone = db.Column(db.String(50))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'age': self.age,
+            'address': self.address,
+            'hot': self.hot,
+            'qq': self.qq,
+            'tel': self.tel,
+            'phone': self.phone
+        }
+
+
+# ============ tender_info 数据库的表 (bind='tender') ============
+
+class RtsTenderA(db.Model):
+    __bind_key__ = 'tender'
+    __tablename__ = 't_rts_tender_a'
+    __table_args__ = {'extend_existing': True}
+
+    No = db.Column(db.String(100))
+    title_ru = db.Column(db.Text)
+    starting_price = db.Column(db.Numeric(15, 2))
+    application_security = db.Column(db.String(50))
+    contract_security = db.Column(db.String(50))
+    status = db.Column(db.String(50))
+    published = db.Column(db.Text)
+    apply_data = db.Column(db.String(155))
+    show_data = db.Column(db.String(155))
+    org_name = db.Column(db.Text)
+    org_TinKpp = db.Column(db.Text)
+    org_contact = db.Column(db.Text)
+    cus_name = db.Column(db.Text)
+    cus_TinKppReg = db.Column(db.Text)
+    cus_contact = db.Column(db.Text)
+    cus_address = db.Column(db.Text)
+    detail_url = db.Column(db.Text)
+    page = db.Column(db.Integer)
+    update_time = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            'No': self.No,
+            'title_ru': self.title_ru,
+            'starting_price': float(self.starting_price) if self.starting_price else None,
+            'application_security': self.application_security,
+            'contract_security': self.contract_security,
+            'status': self.status,
+            'published': self.published,
+            'apply_data': self.apply_data,
+            'show_data': self.show_data,
+            'org_name': self.org_name,
+            'org_TinKpp': self.org_TinKpp,
+            'org_contact': self.org_contact,
+            'cus_name': self.cus_name,
+            'cus_TinKppReg': self.cus_TinKppReg,
+            'cus_contact': self.cus_contact,
+            'cus_address': self.cus_address,
+            'detail_url': self.detail_url,
+            'page': self.page,
+            'update_time': self.update_time.strftime('%Y-%m-%d %H:%M:%S') if self.update_time else None
+        }
+
+
+class RtsTenderB(db.Model):
+    __bind_key__ = 'tender'
+    __tablename__ = 't_rts_tender_b'
+    __table_args__ = {'extend_existing': True}
+
+    No = db.Column(db.String(100))
+    title_ru = db.Column(db.Text)
+    starting_price = db.Column(db.Numeric(15, 2))
+    application_security = db.Column(db.String(50))
+    contract_security = db.Column(db.String(50))
+    status = db.Column(db.String(50))
+    published = db.Column(db.Text)
+    apply_data = db.Column(db.String(155))
+    show_data = db.Column(db.String(155))
+    org_name = db.Column(db.Text)
+    org_TinKpp = db.Column(db.Text)
+    org_contact = db.Column(db.Text)
+    cus_name = db.Column(db.Text)
+    cus_TinKppReg = db.Column(db.Text)
+    cus_contact = db.Column(db.Text)
+    cus_address = db.Column(db.Text)
+    detail_url = db.Column(db.Text)
+    page = db.Column(db.Integer)
+    update_time = db.Column(db.DateTime)
+
+    def to_dict(self):
+        return {
+            'No': self.No,
+            'title_ru': self.title_ru,
+            'starting_price': float(self.starting_price) if self.starting_price else None,
+            'application_security': self.application_security,
+            'contract_security': self.contract_security,
+            'status': self.status,
+            'published': self.published,
+            'apply_data': self.apply_data,
+            'show_data': self.show_data,
+            'org_name': self.org_name,
+            'org_TinKpp': self.org_TinKpp,
+            'org_contact': self.org_contact,
+            'cus_name': self.cus_name,
+            'cus_TinKppReg': self.cus_TinKppReg,
+            'cus_contact': self.cus_contact,
+            'cus_address': self.cus_address,
+            'detail_url': self.detail_url,
+            'page': self.page,
+            'update_time': self.update_time.strftime('%Y-%m-%d %H:%M:%S') if self.update_time else None
         }

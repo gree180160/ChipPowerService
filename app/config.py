@@ -20,6 +20,40 @@ class Config:
         f'&read_timeout=120'
         f'&write_timeout=120'
     )
+
+    # 监控数据库 (monitor_market)
+    MONITOR_DB_HOST = os.getenv('MONITOR_DB_HOST', '8.219.49.4')
+    MONITOR_DB_USER = os.getenv('MONITOR_DB_USER', 'monitorDBA')
+    MONITOR_DB_PASSWORD = os.getenv('MONITOR_DB_PASSWORD', 'Calcitrapa0228.')
+    MONITOR_DB_NAME = os.getenv('MONITOR_DB_NAME', 'monitor_market')
+    MONITOR_DB_PORT = int(os.getenv('MONITOR_DB_PORT', 3306))
+
+    # 招标数据库 (tender_info)
+    TENDER_DB_HOST = os.getenv('TENDER_DB_HOST', '8.219.49.4')
+    TENDER_DB_USER = os.getenv('TENDER_DB_USER', 'tender_manager')
+    TENDER_DB_PASSWORD = os.getenv('TENDER_DB_PASSWORD', 'ZGKHyuE2t8GBsmDn')
+    TENDER_DB_NAME = os.getenv('TENDER_DB_NAME', 'tender_info')
+    TENDER_DB_PORT = int(os.getenv('TENDER_DB_PORT', 3306))
+
+    SQLALCHEMY_BINDS = {
+        'monitor': (
+            f'mysql+pymysql://{MONITOR_DB_USER}:{MONITOR_DB_PASSWORD}@{MONITOR_DB_HOST}:{MONITOR_DB_PORT}/{MONITOR_DB_NAME}'
+            f'?charset=utf8mb4'
+            f'&ssl_disabled=True'
+            f'&connect_timeout=120'
+            f'&read_timeout=120'
+            f'&write_timeout=120'
+        ),
+        'tender': (
+            f'mysql+pymysql://{TENDER_DB_USER}:{TENDER_DB_PASSWORD}@{TENDER_DB_HOST}:{TENDER_DB_PORT}/{TENDER_DB_NAME}'
+            f'?charset=utf8mb4'
+            f'&ssl_disabled=True'
+            f'&connect_timeout=120'
+            f'&read_timeout=120'
+            f'&write_timeout=120'
+        )
+    }
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_POOL_SIZE = 10
     SQLALCHEMY_POOL_RECYCLE = 1800
