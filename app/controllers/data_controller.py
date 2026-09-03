@@ -29,15 +29,15 @@ def execute_write(sql, data_list, bind=None):
 
 def execute_write_upsert(table_name, columns, data_list, conflict_cols, bind=None):
     """
-    高性能写入：INSERT ... ON DUPLICATE KEY UPDATE
-    比 REPLACE INTO 快（不需要先DELETE再INSERT，直接UPDATE）
+    统一写入：REPLACE INTO
+    存在则删除后插入(全字段同步更新, update_time 等默认列会重新取当前值), 不存在则插入。
+    :param conflict_cols: 保留参数, REPLACE INTO 无需冲突更新列;(键冲突时全行覆盖)
     :param bind: None用主库，'monitor'用监控库
     """
     try:
         col_str = ', '.join(columns)
         val_str = ', '.join([f':{c}' for c in columns])
-        update_str = ', '.join([f'{c}=VALUES({c})' for c in conflict_cols])
-        sql = f"INSERT INTO {table_name} ({col_str}) VALUES ({val_str}) ON DUPLICATE KEY UPDATE {update_str}"
+        sql = f"REPLACE INTO {table_name} ({col_str}) VALUES ({val_str})"
         engine = db.engines.get(bind) if bind else db.engine
         with engine.connect() as conn:
             with conn.begin():
@@ -316,8 +316,8 @@ def hq_stock_read():
 @data_bp.route('/hq_hot/write', methods=['POST'])
 def hq_hot_write():
     data_list = request.json if isinstance(request.json, list) else [request.json]
-    columns = ['ppn', 'manu', 'weak_hot', 'month_hot', 'task_name']
-    success, msg = execute_write_upsert('t_hq_peakfire', columns, data_list, ['manu', 'weak_hot', 'month_hot', 'task_name'])
+    columns = ['ppn', 'manu', 'week_hot', 'month_hot', 'week_stock', 'month_stock', 'week_price', 'month_price', 'task_name']
+    success, msg = execute_write_upsert('t_hq_peakfire', columns, data_list, ['manu', 'week_hot', 'month_hot', 'week_stock', 'month_stock', 'week_price', 'month_price', 'task_name'])
     return success_response(message=msg) if success else error_response(msg, 500)
 
 
@@ -335,7 +335,8 @@ def hq_hot_query_by_models():
         if success and data:
             results.append(data[0])
         else:
-            results.append({'ppn': model, 'manu': '--', 'weak_hot': '--', 'month_hot': '--'})
+            results.append({'ppn': model, 'manu': '--', 'week_hot': '--', 'month_hot': '--',
+                            'week_stock': '--', 'month_stock': '--', 'week_price': '--', 'month_price': '--'})
     return success_response(data=results)
 
 
@@ -358,6 +359,31 @@ def _parse_int_array(raw):
         for v in parsed:
             try:
                 result.append(int(float(v)))
+            except (ValueError, TypeError):
+                pass
+        return result
+    return []
+
+
+def _parse_float_array(raw):
+    """解析数组字符串为 float 列表(用于价格等含小数的数据)。
+    非数组(标量/无法解析)返回 [] → 前端显示 '--',便于暴露数据问题。"""
+    if not raw or not str(raw).strip():
+        return []
+    s = str(raw).strip()
+    parsed = None
+    try:
+        parsed = ast.literal_eval(s)
+    except (ValueError, SyntaxError):
+        try:
+            parsed = json.loads(s.replace("'", '"'))
+        except Exception:
+            parsed = None
+    if isinstance(parsed, (list, tuple)):
+        result = []
+        for v in parsed:
+            try:
+                result.append(float(v))
             except (ValueError, TypeError):
                 pass
         return result
@@ -403,10 +429,13 @@ def _to_int(raw):
 
 @data_bp.route('/hq_hot/by_ppn', methods=['GET'])
 def hq_hot_by_ppn():
-    """按 ppn 查询 t_hq_peakfire 最新记录(按 update_time 倒序取第一条),返回 month_hot/weak_hot 的 int 数组及其均值。
+    """按 ppn 查询 t_hq_peakfire 最新记录(按 update_time 倒序取第一条),返回热度/库存/价格各周月数组及其均值。
     查询参数:
       - ppn: PPN 型号 (必填)
-    返回: { code, data: { month_hot_array, month_hot_avg, weak_hot_array, weak_hot_avg, update_time } | null }
+    返回: { code, data: { week_hot_array, week_hot_avg, month_hot_array, month_hot_avg,
+                          week_stock_array, week_stock_avg, month_stock_array, month_stock_avg,
+                          week_price_array, week_price_avg, month_price_array, month_price_avg,
+                          update_time } | null }
     """
     ppn = request.args.get('ppn', '').strip()
     if not ppn:
@@ -416,7 +445,7 @@ def hq_hot_by_ppn():
         engine = db.engine
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT month_hot, weak_hot, update_time
+                SELECT week_hot, month_hot, week_stock, month_stock, week_price, month_price, update_time
                 FROM t_hq_peakfire
                 WHERE ppn = :ppn
                 ORDER BY update_time DESC
@@ -426,17 +455,37 @@ def hq_hot_by_ppn():
             if not row:
                 return jsonify({'code': 200, 'message': 'Success', 'data': None}), 200
 
-            month_hot_array = _parse_int_array(row[0])
-            weak_hot_array = _parse_int_array(row[1])
-            month_hot_avg = round(sum(month_hot_array) / len(month_hot_array), 2) if month_hot_array else None
-            weak_hot_avg = round(sum(weak_hot_array) / len(weak_hot_array), 2) if weak_hot_array else None
+            def _parse_int_and_avg(raw):
+                arr = _parse_int_array(raw)
+                avg = round(sum(arr) / len(arr), 2) if arr else None
+                return arr, avg
+
+            def _parse_float_and_avg(raw):
+                arr = _parse_float_array(raw)
+                avg = round(sum(arr) / len(arr), 2) if arr else None
+                return arr, avg
+
+            week_hot_arr, week_hot_avg = _parse_int_and_avg(row[0])
+            month_hot_arr, month_hot_avg = _parse_int_and_avg(row[1])
+            week_stock_arr, week_stock_avg = _parse_int_and_avg(row[2])
+            month_stock_arr, month_stock_avg = _parse_int_and_avg(row[3])
+            week_price_arr, week_price_avg = _parse_float_and_avg(row[4])
+            month_price_arr, month_price_avg = _parse_float_and_avg(row[5])
 
             data = {
-                'month_hot_array': month_hot_array,
+                'week_hot_array': week_hot_arr,
+                'week_hot_avg': week_hot_avg,
+                'month_hot_array': month_hot_arr,
                 'month_hot_avg': month_hot_avg,
-                'weak_hot_array': weak_hot_array,
-                'weak_hot_avg': weak_hot_avg,
-                'update_time': row[2].strftime('%Y-%m-%d %H:%M:%S') if row[2] else None,
+                'week_stock_array': week_stock_arr,
+                'week_stock_avg': week_stock_avg,
+                'month_stock_array': month_stock_arr,
+                'month_stock_avg': month_stock_avg,
+                'week_price_array': week_price_arr,
+                'week_price_avg': week_price_avg,
+                'month_price_array': month_price_arr,
+                'month_price_avg': month_price_avg,
+                'update_time': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None,
             }
             return jsonify({'code': 200, 'message': 'Success', 'data': data}), 200
     except Exception as e:
@@ -1433,9 +1482,9 @@ def ppn_result_upload():
             }, message=f'解析成功,共 {len(merged)} 条,请确认后写入')
 
         # ================================================================
-        # Step 4: 确认写入 — 纯 UPSERT (ON DUPLICATE KEY UPDATE)
-        # 不删除旧数据:同 (ppn, manu_name, task_name) 的记录被新数据替换,
-        # 其余旧记录(同 task 下不同 ppn,或不同 task 的数据)全部保留
+        # Step 4: 确认写入 — UPSERT (ON DUPLICATE KEY UPDATE)
+        # 因 id 为 AUTO_INCREMENT 且被 t_ppn_store 引用,不能用 REPLACE(会换 id 断链),
+        # 冲突时更新所有数据列并刷新 update_time
         # ================================================================
         engine = db.engine
         columns = ['ppn', 'manu_name', 'digikey_status', 'hq_m_avg', 'hq_sup_count',
@@ -1445,8 +1494,8 @@ def ppn_result_upload():
         val_str = ', '.join([f':{c}' for c in columns])
         # 冲突键: uk_ppn_manu_task (ppn, manu_name, task_name) → 其余列参与 UPDATE
         conflict_cols = [c for c in columns if c not in ('ppn', 'manu_name', 'task_name')]
-        update_str = ', '.join([f'{c}=VALUES({c})' for c in conflict_cols])
-        upsert_sql = f"INSERT INTO t_ppn_result ({col_str}) VALUES ({val_str}) ON DUPLICATE KEY UPDATE {update_str}"
+        update_str = ', '.join([f'{c}=VALUES({c})' for c in conflict_cols]) + ', update_time=NOW()'
+        upsert_sql = f"INSERT INTO t_ppn_result ({col_str}, update_time) VALUES ({val_str}, NOW()) ON DUPLICATE KEY UPDATE {update_str}"
 
         batch_size = 500
         written = 0
@@ -1694,7 +1743,7 @@ def ppn_result_detail():
                   r.hq_m_avg, r.hq_sup_count, r.hq_stock,
                   r.ic_sup_count, r.ic_stock, r.efind_all_sup,
                   r.wheat_global, r.wheat_ru, r.oc_price, r.oc_stock, r.update_time,
-                  h.month_hot, h.weak_hot, h.update_time AS hq_update_time,
+                  h.month_hot, h.week_hot, h.update_time AS hq_update_time,
                   i.month_search_count, i.update_time AS ic_update_time,
                   o.stock_data, o.update_time AS oc_update_time,
                   d.category, d.update_time AS dk_update_time,
@@ -1710,7 +1759,7 @@ def ppn_result_detail():
                   ORDER BY update_time DESC
                   LIMIT 1
                 ) r ON r.ppn = p.ppn
-                LEFT JOIN (SELECT ppn, month_hot, weak_hot, update_time FROM t_hq_peakfire WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) h ON h.ppn = p.ppn
+                LEFT JOIN (SELECT ppn, month_hot, week_hot, update_time FROM t_hq_peakfire WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) h ON h.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, month_search_count, update_time FROM t_ic_price_demand WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) i ON i.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, stock_data, update_time FROM t_octopart_info WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) o ON o.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, category, update_time FROM t_digikey_attr WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) d ON d.ppn = p.ppn

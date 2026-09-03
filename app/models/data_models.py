@@ -292,15 +292,21 @@ class HQHot(db.Model):
     
     ppn = db.Column(db.String(100))
     manu = db.Column(db.String(50))
-    weak_hot = db.Column(db.String(255))
+    week_hot = db.Column(db.String(255))
     month_hot = db.Column(db.String(400))
+    week_stock = db.Column(db.String(500))
+    month_stock = db.Column(db.String(500))
+    week_price = db.Column(db.String(500))
+    month_price = db.Column(db.String(500))
     task_name = db.Column(db.String(50))
     update_time = db.Column(db.DateTime)
     
     def to_dict(self):
         return {
-            'ppn': self.ppn, 'manu': self.manu, 'weak_hot': self.weak_hot,
-            'month_hot': self.month_hot, 'task_name': self.task_name,
+            'ppn': self.ppn, 'manu': self.manu, 'week_hot': self.week_hot,
+            'month_hot': self.month_hot, 'week_stock': self.week_stock,
+            'month_stock': self.month_stock, 'week_price': self.week_price,
+            'month_price': self.month_price, 'task_name': self.task_name,
             'update_time': self.update_time.strftime('%Y-%m-%d %H:%M:%S') if self.update_time else None
         }
 
