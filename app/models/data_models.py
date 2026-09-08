@@ -9,7 +9,7 @@ class Task(db.Model):
     TID = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
     Tname = db.Column(db.String(200))
     Tdes = db.Column(db.String(256))
-    Tstate = db.Column(db.SmallInteger)
+    Tstate = db.Column(db.SmallInteger)  # 任务状态: 0待处理 1进行中 2已完成 3已取消 4简化版完成
     Tlevel = db.Column(db.SmallInteger)
     tkind = db.Column(db.SmallInteger, default=0)
     TstartDate = db.Column(db.DateTime)

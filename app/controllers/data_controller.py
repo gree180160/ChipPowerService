@@ -1,5 +1,6 @@
 import ast
 import json
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from app import db
 from sqlalchemy import text
@@ -1132,6 +1133,140 @@ def monitor_ic_write():
     return success_response(message=msg) if success else error_response(msg, 500)
 
 
+@data_bp.route('/monitor_ic/stock_change', methods=['POST'])
+def monitor_ic_stock_change():
+    """
+    计算每个 PPN 的库存变化与供应商数量变化(基于 monitor_ic 表):
+    stockChange     = 最新 m_date 的所有记录 sup_stock 总和 - 次新 m_date 的所有记录 sup_stock 总和。
+    supplierChange  = 最新 m_date 的供应商个数 - 次新 m_date 的供应商个数(按 supplier 去重)。
+    仅统计纯数字的 sup_stock(如 "500"/"3000"),非数字(如 "--")跳过。
+    请求体: { "ppns": ["11AA02E48T-I/TT", ...] }
+    返回: { "code": 200, "data": { ppn: { "stock_change": 变化值, "supplier_change": 供应商数变化 } } }
+    """
+    from collections import defaultdict
+    payload = request.get_json(silent=True) or {}
+    ppns = payload.get('ppns')
+    if not isinstance(ppns, list):
+        return error_response('ppns 必须是数组', 400)
+    ppn_set = list(dict.fromkeys(str(p).strip() for p in ppns if str(p).strip()))
+    if not ppn_set:
+        return success_response(data={})
+    try:
+        engine = db.engines['monitor']
+        result = {}
+        with engine.connect() as conn:
+            # 分批 IN 查询,避免 SQL 过长
+            CHUNK = 500
+            for i in range(0, len(ppn_set), CHUNK):
+                chunk = ppn_set[i:i + CHUNK]
+                placeholders = ', '.join(f':p{j}' for j in range(len(chunk)))
+                params = {f'p{j}': v for j, v in enumerate(chunk)}
+                sql = f"""
+                    SELECT st_ppn, m_date, sup_stock, supplier
+                    FROM monitor_ic
+                    WHERE st_ppn IN ({placeholders})
+                """
+                rows = conn.execute(text(sql), params).fetchall()
+                # 按 PPN 聚合: { ppn: { m_date: { 'stocks': [...], 'suppliers': set() } } }
+                date_map = defaultdict(lambda: defaultdict(lambda: {'stocks': [], 'suppliers': set()}))
+                for st_ppn, m_date, sup_stock, supplier in rows:
+                    day = date_map[str(st_ppn)][str(m_date)]
+                    day['stocks'].append(sup_stock)
+                    if supplier:
+                        day['suppliers'].add(str(supplier))
+                for ppn, dates in date_map.items():
+                    # 取最大的两个 m_date
+                    top2 = sorted(dates.keys(), reverse=True)[:2]
+                    if len(top2) < 2:
+                        continue  # 只有一个日期,无法计算变化
+                    def _stock_sum(day):
+                        total = 0
+                        for v in day['stocks']:
+                            s = str(v).strip().replace(',', '')
+                            if s.isdigit():
+                                total += int(s)
+                        return total
+                    latest, prev = top2[0], top2[1]
+                    result[ppn] = {
+                        'stock_change': _stock_sum(dates[latest]) - _stock_sum(dates[prev]),
+                        'supplier_change': len(dates[latest]['suppliers']) - len(dates[prev]['suppliers']),
+                    }
+        return success_response(data=result)
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@data_bp.route('/monitor_ic/supplier_stock', methods=['GET'])
+def monitor_ic_supplier_stock():
+    """
+    查询单个 PPN 在 monitor_ic 中每个供应商的库存变化情况:
+    - 按供应商分组,附带完整日期历史(按日期升序)
+    - 库存变化 = 最新 m_date 的 sup_stock - 次新 m_date 的 sup_stock(仅统计纯数字库存)
+    查询参数: ?st_ppn=xxx
+    返回: { code, data: { st_ppn, st_manu, suppliers: [{ supplier, sup_ppn, sup_manu, latest_stock, stock_change, history: [{ m_date, sup_stock, sup_ppn, sup_manu }] }] } }
+    """
+    st_ppn = (request.args.get('st_ppn') or '').strip()
+    if not st_ppn:
+        return error_response('st_ppn 不能为空', 400)
+    try:
+        engine = db.engines['monitor']
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT st_ppn, st_manu, supplier, sup_ppn, sup_manu, sup_stock, m_date "
+                    "FROM monitor_ic WHERE st_ppn = :p ORDER BY supplier ASC, m_date ASC"
+                ),
+                {'p': st_ppn}
+            ).fetchall()
+
+        if not rows:
+            return success_response(data={'st_ppn': st_ppn, 'st_manu': '', 'suppliers': []})
+
+        st_manu = rows[0][1]
+        # 按供应商聚合历史(日期升序)
+        from collections import OrderedDict
+        sup_map = OrderedDict()
+        for row in rows:
+            _, _, supplier, sup_ppn, sup_manu, sup_stock, m_date = row
+            if supplier not in sup_map:
+                sup_map[supplier] = {'history': []}
+            sup_map[supplier]['history'].append({
+                'm_date': str(m_date),
+                'sup_stock': sup_stock,
+                'sup_ppn': sup_ppn or '',
+                'sup_manu': sup_manu or '',
+            })
+
+        def _num(v):
+            s = str(v).strip().replace(',', '')
+            return int(s) if s.isdigit() else None
+
+        suppliers = []
+        for supplier, info in sup_map.items():
+            history = info['history']
+            latest = history[-1]
+            latest_num = _num(latest['sup_stock'])
+            prev_num = _num(history[-2]['sup_stock']) if len(history) >= 2 else None
+            stock_change = None
+            if latest_num is not None and prev_num is not None:
+                stock_change = latest_num - prev_num
+            suppliers.append({
+                'supplier': supplier,
+                'sup_ppn': latest['sup_ppn'],
+                'sup_manu': latest['sup_manu'],
+                'latest_stock': latest['sup_stock'],
+                'stock_change': stock_change,
+                'history': history,
+            })
+        return success_response(data={
+            'st_ppn': st_ppn,
+            'st_manu': st_manu or '',
+            'suppliers': suppliers,
+        })
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
 # ---------- IC_supplier_info 表 ----------
 
 @data_bp.route('/ic_supplier_info/read', methods=['GET'])
@@ -1226,30 +1361,6 @@ def rts_tender_b_write():
 # PPN Result Excel 上传/解析
 # ============================================================================
 
-def _read_excel_sheet(filepath, sheet_name, **kwargs):
-    """安全读取 Excel sheet,返回 list[dict] (空单元格用 None)"""
-    import pandas as pd
-    import math
-    try:
-        df = pd.read_excel(filepath, sheet_name=sheet_name, engine='openpyxl', **kwargs)
-        # 把 nan / NaN 全部转成 None,避免后续判空失效
-        df = df.astype(object).where(df.notna(), None)
-        rows = df.to_dict('records')
-        # 防御性清理:任何残留的 float('nan') 转 None
-        cleaned = []
-        for r in rows:
-            clean_row = {}
-            for k, v in r.items():
-                if isinstance(v, float) and math.isnan(v):
-                    clean_row[k] = None
-                else:
-                    clean_row[k] = v
-            cleaned.append(clean_row)
-        return cleaned
-    except Exception:
-        return []
-
-
 def _to_str(val):
     """将任意值安全转为字符串(varchar 列存储)"""
     if val is None:
@@ -1322,24 +1433,46 @@ def ppn_result_upload():
         file.save(tmp_path)
 
         # ================================================================
-        # Step 1: 解析 ppn sheet (基础数据)
+        # Step 1: 一次性载入整个工作簿,所有 sheet 均从内存读取(避免每 sheet 重新解析 xlsx)
         # ================================================================
-        ppn_rows = _read_excel_sheet(tmp_path, 'ppn', header=None)
-        if not ppn_rows:
-            # 尝试带表头读取
-            ppn_rows = _read_excel_sheet(tmp_path, 'ppn')
-            if ppn_rows:
-                # 把 DataFrame 格式转成按位置的列表
-                ppn_rows = [[r.get(f'Unnamed: {i}') for i in range(5)] for r in ppn_rows]
+        import openpyxl
+        wb = openpyxl.load_workbook(tmp_path, read_only=True, data_only=True)  # data_only 读缓存值而非公式
+        _sheet_cache = {}
 
-        # 归一化:取 col1=ppn, col2=manu_name, col3=digikey_status
+        def get_rows(sheet_name):
+            """从已加载的工作簿读取 sheet 原始行列表 list[list],空单元格为 None,已缓存"""
+            if sheet_name in _sheet_cache:
+                return _sheet_cache[sheet_name]
+            if sheet_name not in wb.sheetnames:
+                _sheet_cache[sheet_name] = []
+                return []
+            ws = wb[sheet_name]
+            # 过滤全空行(iter_rows 会产生空行/超短尾行,避免上层直接取列索引越界)
+            rows = [
+                list(r)
+                for r in ws.iter_rows(values_only=True)
+                if any(c is not None for c in r)
+            ]
+            _sheet_cache[sheet_name] = rows
+            return rows
+
+        # 基础数据:取 col1=ppn, col2=manu_name, col3=digikey_status
+        ppn_rows = get_rows('ppn')
         base_map = {}  # ppn_key -> { ppn, manu_name, digikey_status }
         for row in ppn_rows:
-            ppn_val = _to_str(row[0] if isinstance(row, (list, tuple)) else row.get(0))
+            # get_rows 返回 list 行:空行/超短行需做长度保护,避免 list index out of range
+            if isinstance(row, (list, tuple)):
+                ppn_val = _to_str(row[0]) if len(row) > 0 else None
+            else:
+                ppn_val = _to_str(row.get(0))
             if not ppn_val:
                 continue
-            manu = _to_str(row[1] if isinstance(row, (list, tuple)) else row.get(1))
-            dk = _to_str(row[2] if isinstance(row, (list, tuple)) else row.get(2))
+            if isinstance(row, (list, tuple)):
+                manu = _to_str(row[1]) if len(row) > 1 else None
+                dk = _to_str(row[2]) if len(row) > 2 else None
+            else:
+                manu = _to_str(row.get(1))
+                dk = _to_str(row.get(2))
             key = ppn_val.lower().strip()
             base_map[key] = {
                 'ppn': ppn_val.strip(),
@@ -1357,8 +1490,8 @@ def ppn_result_upload():
         # Helper: 按 col index 读取 ppn -> value 映射
         def _read_col_map(sheet_name, ppn_col_idx, val_col_idx):
             """读取指定 sheet,返回 {ppn_lower: value}
-            行格式兼容 dict (pandas to_dict('records')) 和 list"""
-            rows = _read_excel_sheet(tmp_path, sheet_name, header=None)
+            行格式兼容 list(from get_rows)"""
+            rows = get_rows(sheet_name)
             result = {}
             for row in rows:
                 # 兼容 dict (pandas 默认) 或 list
@@ -1395,7 +1528,7 @@ def ppn_result_upload():
         # octopart: ppn(col0=第1列), oc_stock(col4=第5列),
         # oc_price = 第6列(货币单位, index 5) + 第7列(货币数值, index 6) 合并
         # 例如: "USD" + "2.45" → "USD 2.45"
-        oc_rows = _read_excel_sheet(tmp_path, 'octopart', header=None)
+        oc_rows = get_rows('octopart')
         oc_stock_map = {}
         oc_price_map = {}
         for row in oc_rows:
@@ -1491,20 +1624,26 @@ def ppn_result_upload():
                    'hq_stock', 'ic_sup_count', 'ic_stock', 'efind_all_sup',
                    'wheat_global', 'wheat_ru', 'oc_price', 'oc_stock', 'task_name']
         col_str = ', '.join(columns)
-        val_str = ', '.join([f':{c}' for c in columns])
+        # 注意: VALUES 里不要用 NOW() 等带括号函数载入,否则 PyMySQL 的 executemany
+        # 无法用正则合并成单个多行 INSERT,会退化成逐行 execute(远程 DB 上极慢)。
+        # update_time 用 Python 时间作为绑定参数传入。
+        val_str = ', '.join([f':{c}' for c in columns] + [':update_time'])
         # 冲突键: uk_ppn_manu_task (ppn, manu_name, task_name) → 其余列参与 UPDATE
         conflict_cols = [c for c in columns if c not in ('ppn', 'manu_name', 'task_name')]
-        update_str = ', '.join([f'{c}=VALUES({c})' for c in conflict_cols]) + ', update_time=NOW()'
-        upsert_sql = f"INSERT INTO t_ppn_result ({col_str}, update_time) VALUES ({val_str}, NOW()) ON DUPLICATE KEY UPDATE {update_str}"
+        update_str = ', '.join([f'{c}=VALUES({c})' for c in conflict_cols]) + ', update_time=VALUES(update_time)'
+        upsert_sql = f"INSERT INTO t_ppn_result ({col_str}, update_time) VALUES ({val_str}) ON DUPLICATE KEY UPDATE {update_str}"
 
         batch_size = 500
         written = 0
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         with engine.connect() as conn:
             with conn.begin():
                 # 不再 DELETE:旧数据保留,仅同键记录被 UPSERT 替换
                 for i in range(0, len(merged), batch_size):
                     batch = merged[i:i + batch_size]
-                    conn.execute(text(upsert_sql), batch)
+                    conn.execute(text(upsert_sql), [
+                        {**r, 'update_time': now_str} for r in batch
+                    ])
                     written += len(batch)
 
         return success_response(data={
@@ -1519,7 +1658,6 @@ def ppn_result_upload():
         traceback.print_exc()
         return error_response(f'解析失败: {str(e)}', 500)
     finally:
-        # 清理临时文件
         try:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -1743,7 +1881,7 @@ def ppn_result_detail():
                   r.hq_m_avg, r.hq_sup_count, r.hq_stock,
                   r.ic_sup_count, r.ic_stock, r.efind_all_sup,
                   r.wheat_global, r.wheat_ru, r.oc_price, r.oc_stock, r.update_time,
-                  h.month_hot, h.week_hot, h.update_time AS hq_update_time,
+                  h.month_hot, h.week_hot, h.week_stock, h.month_stock, h.week_price, h.month_price, h.update_time AS hq_update_time,
                   i.month_search_count, i.update_time AS ic_update_time,
                   o.stock_data, o.update_time AS oc_update_time,
                   d.category, d.update_time AS dk_update_time,
@@ -1759,7 +1897,7 @@ def ppn_result_detail():
                   ORDER BY update_time DESC
                   LIMIT 1
                 ) r ON r.ppn = p.ppn
-                LEFT JOIN (SELECT ppn, month_hot, week_hot, update_time FROM t_hq_peakfire WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) h ON h.ppn = p.ppn
+                LEFT JOIN (SELECT ppn, month_hot, week_hot, week_stock, month_stock, week_price, month_price, update_time FROM t_hq_peakfire WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) h ON h.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, month_search_count, update_time FROM t_ic_price_demand WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) i ON i.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, stock_data, update_time FROM t_octopart_info WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) o ON o.ppn = p.ppn
                 LEFT JOIN (SELECT ppn, category, update_time FROM t_digikey_attr WHERE ppn = :ppn ORDER BY update_time DESC LIMIT 1) d ON d.ppn = p.ppn
@@ -1799,8 +1937,14 @@ def ppn_result_detail():
             month_hot_avg = round(sum(month_hot_arr) / len(month_hot_arr), 2) if month_hot_arr else None
             weak_hot_avg = round(sum(weak_hot_arr) / len(weak_hot_arr), 2) if weak_hot_arr else None
 
+            # 关联:t_hq_peakfire 华强库存/价格周、月变化数组(周12点/月12点)
+            week_stock_arr = _parse_int_array(row[18])
+            month_stock_arr = _parse_int_array(row[19])
+            week_price_arr = _parse_float_array(row[20])
+            month_price_arr = _parse_float_array(row[21])
+
             # 关联:t_octopart_info 库存波动点位(JSON → [{date, stock}])
-            stock_points = _parse_stock_points(row[21])
+            stock_points = _parse_stock_points(row[25])
 
             data = {
                 # --- t_ppn_result 基础指标 + 得分 ---
@@ -1827,18 +1971,23 @@ def ppn_result_detail():
                 'month_hot_avg': month_hot_avg,
                 'weak_hot_array': weak_hot_arr,
                 'weak_hot_avg': weak_hot_avg,
-                'hq_update_time': row[18].strftime('%Y-%m-%d %H:%M:%S') if row[18] else None,
+                'hq_update_time': row[22].strftime('%Y-%m-%d %H:%M:%S') if row[22] else None,
+                # --- t_hq_peakfire 华强库存/价格 周、月变化 ---
+                'week_stock_array': week_stock_arr,
+                'month_stock_array': month_stock_arr,
+                'week_price_array': week_price_arr,
+                'month_price_array': month_price_arr,
                 # --- t_ic_price_demand IC 月搜索量 ---
-                'month_search_count': _to_int(row[19]),
-                'ic_update_time': row[20].strftime('%Y-%m-%d %H:%M:%S') if row[20] else None,
+                'month_search_count': _to_int(row[23]),
+                'ic_update_time': row[24].strftime('%Y-%m-%d %H:%M:%S') if row[24] else None,
                 # --- t_octopart_info 库存波动 ---
                 'stock_points': stock_points,
-                'oc_update_time': row[22].strftime('%Y-%m-%d %H:%M:%S') if row[22] else None,
+                'oc_update_time': row[26].strftime('%Y-%m-%d %H:%M:%S') if row[26] else None,
                 # --- t_digikey_attr 分类 ---
-                'category': row[23] if row[23] else None,
-                'dk_update_time': row[24].strftime('%Y-%m-%d %H:%M:%S') if row[24] else None,
+                'category': row[27] if row[27] else None,
+                'dk_update_time': row[28].strftime('%Y-%m-%d %H:%M:%S') if row[28] else None,
                 # --- t_ppn source ---
-                'source': row[25] if row[25] else None,
+                'source': row[29] if row[29] else None,
             }
             return jsonify({'code': 200, 'message': 'Success', 'data': data}), 200
     except Exception as e:
