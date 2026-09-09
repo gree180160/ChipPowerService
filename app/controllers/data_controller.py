@@ -1190,6 +1190,9 @@ def monitor_ic_stock_change():
                     result[ppn] = {
                         'stock_change': _stock_sum(dates[latest]) - _stock_sum(dates[prev]),
                         'supplier_change': len(dates[latest]['suppliers']) - len(dates[prev]['suppliers']),
+                        # 变化区间:最新与次新 m_date
+                        'm_date_latest': latest,
+                        'm_date_prev': prev,
                     }
         return success_response(data=result)
     except Exception as e:
